@@ -1,19 +1,20 @@
 import numpy as np
 from scipy.signal import stft, istft
 from scipy.io import wavfile
-from Crypto.Cipher import AES, PKCS1_OAEP
+from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
+from Crypto.Signature import pkcs1_15
+from Crypto.Hash import SHA256
 from Crypto.Util.Padding import pad, unpad
 import random
 import struct
 from reedsolo import RSCodec
 
-_check = 64
+_check = 32
 _rsc_block = 255 - _check
 _header_size = 32
 MODE_PLAIN = 0
-MODE_RSA = 1
-MODE_AES = 2
+MODE_AES = 1
 
 __all__ = ['Cryptor', 'EMess', 'embeed', 'extract', 'estimate']
 
@@ -46,57 +47,65 @@ class EMess():
 
 
 class Cryptor():
-    def __init__(self, mode=None, debug=False, key=None, **kwargs):
+    def __init__(self, mode=None, debug=False, password=None, verify=False, key=None, **kwargs):
         if mode is not None:
             self.mode = mode
-            if self.mode not in [0, 1, 2]:
+            if self.mode not in [0, 1]:
                 raise TypeError('Unknown encryption mode')
             if self.mode == MODE_AES:
-                if isinstance(key, bytes):
+                if isinstance(password, bytes):
                     self.cipher = AES.new(
-                        pad(key, 16), AES.MODE_CBC, bytes(16))
-                elif isinstance(key, str):
+                        pad(password, 16), AES.MODE_CBC, bytes(16))
+                elif isinstance(password, str):
                     self.cipher = AES.new(
-                        pad(key.encode(), 16), AES.MODE_CBC, bytes(16))
+                        pad(password.encode(), 16), AES.MODE_CBC, bytes(16))
                 else:
                     raise TypeError('Unknown key type')
                 self.block_size = self.cipher.block_size
-            elif self.mode == MODE_RSA:
-                k = RSA.import_key(key)
-                self.cipher = PKCS1_OAEP.new(k)
-                hLen = self.cipher._hashObj.digest_size
-                # if not k.has_private():
-                #     raise Exception('Not a private key')
-                self.sz = k.size_in_bytes()
-                self.block_size = self.sz - 2 * hLen - 2
-            else:
-                pass
         else:
             self.mode = MODE_PLAIN
             self.block_size = 16
+        self.verify = verify
         self.debug = debug
+        if self.verify:
+            if key is None:
+                raise Exception('no key provided')
+            self.key = RSA.import_key(open(key).read())
         if self.debug:
             print(self.block_size)
 
-    def decrypt(self, data: bytes):
+    def decrypt(self, data: bytes, hashalg=SHA256):
         bb = self._unhead(data[:_header_size])
         _rrs = RSCodec(_check)
         dd = data[_header_size:bb * 255 + _header_size]
+        print(_rrs.check(dd))
         dd = unpad(_rrs.decode(dd)[0], _rsc_block)
         if self.mode == MODE_AES:
             dd = self._aes_dec(dd)
-        elif self.mode == MODE_RSA:
-            dd = self._rsa_dec(dd)
         else:
             dd = dd
-        return unpad(dd, self.block_size)
+        dd = unpad(dd, self.block_size)
+        if self.verify:
+            sz = self.key.size_in_bytes()
+            dd, sig = dd[:-sz], dd[-sz:]
+            hs = hashalg.new(dd)
+            try:
+                pkcs1_15.new(self.key).verify(hs, sig)
+            except:
+                print('signature not valid')
+        return dd
 
-    def encrypt(self, data: bytes):
-        ee = pad(data, self.block_size)
+    def encrypt(self, data: bytes, hashalg=SHA256):
+        if self.verify:
+            if not self.key.has_private():
+                raise AttributeError('not a private key')
+            hs = hashalg.new(data)
+            sig = pkcs1_15.new(self.key).sign(hs)
+            ee = pad(data + sig, self.block_size)
+        else:
+            ee = pad(data, self.block_size)
         if self.mode == MODE_AES:
             ee = self._aes_enc(ee)
-        elif self.mode == MODE_RSA:
-            ee = self._rsa_enc(ee)
         else:
             pass
         return self._ehead(ee)
@@ -104,10 +113,7 @@ class Cryptor():
     def _ehead(self, data: bytes):
         header = b'FsTeg' + b'\x01\x02\x03'
         ee = pad(data, self.block_size)
-        if self.mode == MODE_RSA:
-            ll = struct.pack('i', 1 + len(ee) // self.sz)
-        else:
-            ll = struct.pack('i', 1 + len(ee) // self.block_size)
+        ll = struct.pack('i', 1 + len(ee) // self.block_size)
         _rrs1 = RSCodec()
         _rrs2 = RSCodec(_check)
         return _rrs1.encode(pad(header + ll, _header_size - 10)) + _rrs2.encode(pad(data, _rsc_block))
@@ -117,12 +123,8 @@ class Cryptor():
         hd = _rrs.decode(hh)[0]
         if hd[:5] != b'FsTeg':
             raise Exception('Unknown header type')
-        if self.mode == MODE_RSA:
-            ll = 1 + int.from_bytes(hd[8:12], 'little') * \
-                self.sz // _rsc_block
-        else:
-            ll = 1 + int.from_bytes(hd[8:12], 'little') * \
-                self.block_size // _rsc_block
+        ll = 1 + int.from_bytes(hd[8:12], 'little') * \
+            self.block_size // _rsc_block
         return ll
 
     def _aes_enc(self, data: bytes):
@@ -131,29 +133,8 @@ class Cryptor():
     def _aes_dec(self, data: bytes):
         return self.cipher.decrypt(data)
 
-    def _rsa_enc(self, data: bytes):
-        ''' eb = oaep_pad(pkcs7_pad(data))'''
-        k = b''
-        bc = len(data) // self.block_size
-        for i in range(bc):
-            u = self.cipher.encrypt(
-                data[i * self.block_size:(i + 1) * self.block_size])
-            k += u
-        return k
 
-    def _rsa_dec(self, data: bytes):
-        k = b''
-        ct = 0
-        bb = len(data) // self.sz
-        while ct < bb:
-            u = self.cipher.decrypt(
-                data[ct * self.sz:(ct + 1) * self.sz])
-            ct += 1
-            k += u
-        return k
-
-
-def extract(audiofile: str, ths=1800, perseg=441, overlap=0):
+def extract(audiofile: str, ths=2048, perseg=441, overlap=0):
     srt, sig = wavfile.read(audiofile)
     bb = sig.shape[0] // (perseg - overlap) - 1
     f, t, zxxl = stft(sig[:bb * (perseg - overlap), 0], srt,
@@ -177,7 +158,7 @@ def extract(audiofile: str, ths=1800, perseg=441, overlap=0):
     return _bin2byt(d)
 
 
-def embeed(mess: EMess, infile: str, outfile: str, ths=1800, perseg=441, overlap=0):
+def embeed(mess: EMess, infile: str, outfile: str, ths=2048, perseg=441, overlap=0):
     srt, sig = wavfile.read(infile)
     sig = np.nan_to_num(sig)
     bb = sig.shape[0] // (perseg - overlap) - 1
@@ -214,22 +195,20 @@ def embeed(mess: EMess, infile: str, outfile: str, ths=1800, perseg=441, overlap
     fsg += list(sig[i * (perseg - overlap):])
     fsg = np.array(fsg, np.int16)
     wavfile.write(outfile, srt, fsg)
-    # print(fsg.shape, sig.shape)
-    # print(sum(np.abs(fsg - sig)))
 
 
-def _hb_by_amp(nn: complex, b: str):
+def _hb_by_amp(nn: complex, b: str, delt=15):
     i = nn.real
     j = nn.imag
     mm = np.abs(nn)
-    if (int(mm // 10) % 2) ^ int(b):
-        i += np.cos(np.angle(nn)) * 10
-        j += np.sin(np.angle(nn)) * 10
+    if (int(mm // delt) % 2) ^ int(b):
+        i += np.cos(np.angle(nn)) * delt
+        j += np.sin(np.angle(nn)) * delt
     return np.complex(i, j)
 
 
-def _gp_by_amp(tt: complex):
-    bb = '1' if int(np.abs(tt) // 10) % 2 else '0'
+def _gp_by_amp(tt: complex, delt=15):
+    bb = '1' if int(np.abs(tt) // delt) % 2 else '0'
     return bb
 
 
@@ -255,7 +234,7 @@ def _bin2byt(s: str):
     return d
 
 
-def estimate(audiofile: str, ths=1800, perseg=441, overlap=0):
+def estimate(audiofile: str, ths=2048, perseg=441, overlap=0):
     srt, sig = wavfile.read(audiofile)
     bb = sig.shape[0] // (perseg - overlap) - 1
     _, _, zxxl = stft(sig[:bb * (perseg - overlap), 0], srt,
@@ -273,23 +252,25 @@ def estimate(audiofile: str, ths=1800, perseg=441, overlap=0):
 
 
 if __name__ == '__main__':
-    infile = 'test/wavs/02.wav'
+    infile = 'test/wavs/01.wav'
     outfile = 'out.wav'
     privk = 'test/test.key'
-    print(estimate(infile), 'bytes available.')
+    # print(estimate(infile), 'bytes available.')
 
-    # c = Cryptor(MODE_AES, debug=0, key=b'123456')
-    # d = Cryptor(MODE_AES, key=b'123456')
+    # c = Cryptor(MODE_AES, debug=0, password=b'123456')
+    # d = Cryptor(MODE_AES, password=b'123456')
 
-    # c = Cryptor(MODE_RSA, debug=True, key=open(privk).read())
-    # d = Cryptor(MODE_RSA, key=open(privk).read())
+    c = Cryptor(MODE_AES, password=b'123456',
+                verify=True, key='test/test.key')
+    d = Cryptor(MODE_AES, password=b'123456',
+                verify=True, key='test/test.pub.key')
 
-    # mm = random.randbytes(2048)
+    mm = random.randbytes(4096)
     # mm = b'hello' * 100
-    # ee = c.encrypt(mm)
+    ee = c.encrypt(mm)
     # print(ee, len(ee))
-    # embeed(EMess(ee), infile, outfile)
-    # dd = extract(outfile)
+    embeed(EMess(ee), infile, outfile, ths=1600)
+    dd = extract(outfile, ths=1600)
     # print(dd[:len(ee)], len(dd))
-    # dd = d.decrypt(dd)
-    # print(dd == mm)
+    dd = d.decrypt(dd)
+    print(dd == mm)
