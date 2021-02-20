@@ -1,5 +1,10 @@
+# working directory
 .vscode
 __pycache__
+test.py
+
+# localfiles
 test
 *.wav
-test.py
+*.mp3
+*.log
