@@ -4,7 +4,66 @@
 
 ## Usage
 
-先按照util中的示例来试着使用吧（cli在摸了）
+```
+> py .\app.py -h         
+usage: app.py [-h] {estimate,embeed,extract} ...       
+
+hide messages by fft
+
+positional arguments:
+  {estimate,embeed,extract}
+
+optional arguments:
+  -h, --help            show this help message and exit
+
+> py app.py estimate -h
+usage: app.py estimate [-h] [-ths THS] [-frame FRAME]
+                       [-if IF]
+
+estimate the capacity of the audiofile
+
+optional arguments:
+  -h, --help    show this help message and exit
+  -ths THS      minimum threshold
+  -frame FRAME  points per frame
+  -if IF        the source file     
+
+> py app.py embeed -h  
+usage: app.py embeed [-h] [-ths THS] [-frame FRAME] [-if IF] [-of OF] [-pk PK]
+                     [-enc ENC] [-key KEY] [--verify] [-m MESSAGE]
+
+embeed the message into the audiofile
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -ths THS              minimum threshold
+  -frame FRAME          points per frame
+  -if IF                the source file
+  -of OF                the output file
+  -enc ENC              the encryption mode
+  -key KEY              the key used top encrypt
+  --verify              check the integrity of the message
+  -pk PK                the private key used to sign
+  -m MESSAGE, --message MESSAGE
+                        the file to hide        
+
+> py app.py extract -h 
+usage: app.py extract [-h] [-ths THS] [-frame FRAME] [-if IF] [-of OF] [-pk PK]
+                      [-enc ENC] [-key KEY] [--verify]
+
+extract the message from the audiofile
+
+optional arguments:
+  -h, --help    show this help message and exit
+  -ths THS      minimum threshold
+  -frame FRAME  points per frame
+  -if IF        the source file
+  -of OF        the output file
+  -enc ENC      the decryption mode
+  -key KEY      the key used top decrypt
+  --verify      check the integrity of the message
+  -pk PK        the public key used to verify
+```
 
 受载体音频以及参数(每帧点数、阈值、校验位等)的不同，实际可以隐藏的容量也有很大差异
 

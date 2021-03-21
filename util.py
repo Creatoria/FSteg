@@ -21,7 +21,7 @@ _header_size = 32
 MODE_PLAIN = 0
 MODE_AES = 1
 
-__all__ = ['Cryptor', 'EMess', 'embeed', 'extract', 'estimate']
+__all__ = ['Cryp', 'EMess', 'embeed', 'extract', 'estimate']
 
 
 class EMess():
@@ -51,25 +51,27 @@ class EMess():
         return self.text == tt
 
 
-class Cryptor():
+class Cryp():
     def __init__(self, mode=None, debug=False, password=None, verify=False, key=None, **kwargs):
-        if mode is not None:
-            self.mode = mode
-            if self.mode not in [0, 1]:
-                raise TypeError('Unknown encryption mode')
-            if self.mode == MODE_AES:
-                if isinstance(password, bytes):
-                    self.cipher = AES.new(
-                        pad(password, 16), AES.MODE_CBC, bytes(16))
-                elif isinstance(password, str):
-                    self.cipher = AES.new(
-                        pad(password.encode(), 16), AES.MODE_CBC, bytes(16))
-                else:
-                    raise TypeError('Unknown key type')
-                self.block_size = self.cipher.block_size
+        if password is not None:
+            self.mode = MODE_AES
+        elif mode is None:
+            pass
         else:
             self.mode = MODE_PLAIN
             self.block_size = 16
+        if self.mode == MODE_AES:
+            if isinstance(password, bytes):
+                self.cipher = AES.new(
+                    pad(password, 16), AES.MODE_CBC, bytes(16))
+            elif isinstance(password, str):
+                self.cipher = AES.new(
+                    pad(password.encode(), 16), AES.MODE_CBC, bytes(16))
+            else:
+                raise TypeError('Unknown key type')
+            self.block_size = self.cipher.block_size
+        if self.mode not in [0, 1]:
+            raise TypeError('Unknown encryption mode')
         self.verify = verify
         self.debug = debug
         if self.verify:
@@ -137,7 +139,7 @@ class Cryptor():
         return self._ehead(ee)
 
     def _ehead(self, data: bytes):
-        header = b'FsTeg' + b'\x01\x02\x03'
+        header = b'FsTeg\x01\x02\x03'
         ee = pad(data, self.block_size)
         ll = struct.pack('i', 1 + len(ee) // self.block_size)
         _rrs1 = RSCodec()
@@ -149,6 +151,7 @@ class Cryptor():
         try:
             hd = _rrs.decode(hh)[0]
         except:
+            print('broken header')
             hd = hh[:-10]
         if hd[:5] != b'FsTeg':
             raise Exception('Unknown header type')
@@ -172,23 +175,20 @@ def extract(audiofile: str, ths=2048, perseg=441, overlap=0):
                       'rect', perseg, overlap)
     i = 0
     d = ''
-    of = open('ex.log', 'w')
+    # of = open('ex.log', 'w')
     while i < bb:
         cl = zxxl[:, i]
         cr = zxxr[:, i]
         idxl = np.argwhere(np.abs(cl) > ths)
         idxr = np.argwhere(np.abs(cr) > ths)
-        # if len(idxl.tolist()) + len(idxr.tolist()) == 0:
-        #     i += 1
-        #     continue
         for j in idxl:
-            d += _gp_by_ang(cl[j])
+            d += _gp_by_amp(cl[j])
         for j in idxr:
-            d += _gp_by_ang(cr[j])
-        of.write('L: {} {}, R: {} {} @{}\n'.format(list(f[idxl].T[0]), list(np.angle(
-            cl[idxl].T[0], 1).astype(int)), list(f[idxr].T[0]), list(np.angle(cr[idxr].T[0], 1).astype(int)), str(t[i])[:str(t[i]).index('.') + 3]))
+            d += _gp_by_amp(cr[j])
+        # of.write('L: {} {}, R: {} {} @{}\n'.format(list(f[idxl].T[0]), list(np.angle(
+        #     cl[idxl].T[0], 1).astype(int)), list(f[idxr].T[0]), list(np.angle(cr[idxr].T[0], 1).astype(int)), str(t[i])[:str(t[i]).index('.') + 3]))
         i += 1
-    of.close()
+    # of.close()
     return _bin2byt(d)
 
 
@@ -205,7 +205,7 @@ def embeed(mess: EMess, infile: str, outfile: str, ths=2048, perseg=441, overlap
     ll = 0
     i = 0
     lm = len(mess) * 8
-    of = open('em.log', 'w')
+    # of = open('em.log', 'w')
     while ll < lm:
         cpl = zxxl[:, i].copy()
         cpr = zxxr[:, i].copy()
@@ -214,18 +214,18 @@ def embeed(mess: EMess, infile: str, outfile: str, ths=2048, perseg=441, overlap
         # if len(idxl.tolist()) + len(idxr.tolist()) == 0:
         #     i += 1
         #     continue
-        of.write('L: {} {}, R: {} {} @{}\n'.format(list(f[idxl].T[0]), list(np.angle(
-            cpl[idxl].T[0], 1).astype(int)), list(f[idxr].T[0]), list(np.angle(cpr[idxr].T[0], 1).astype(int)), str(t[i])[:str(t[i]).index('.') + 3]))
+        # of.write('L: {} {}, R: {} {} @{}\n'.format(list(f[idxl].T[0]), list(np.angle(
+        #     cpl[idxl].T[0], 1).astype(int)), list(f[idxr].T[0]), list(np.angle(cpr[idxr].T[0], 1).astype(int)), str(t[i])[:str(t[i]).index('.') + 3]))
         for j in range(min(len(idxl), lm - ll)):
-            cpl[idxl[j]] = _hb_by_ang(cpl[idxl[j]], next(mess))
+            cpl[idxl[j]] = _hb_by_amp(cpl[idxl[j]], next(mess))
             ll += 1
         for j in range(min(len(idxr), lm - ll)):
-            cpr[idxr[j]] = _hb_by_ang(cpr[idxr[j]], next(mess))
+            cpr[idxr[j]] = _hb_by_amp(cpr[idxr[j]], next(mess))
             ll += 1
         sl.append(cpl)
         sr.append(cpr)
         i += 1
-    of.close()
+    # of.close()
     print('blocks used:', i, 'total:', bb)
     _, rsl = istft(np.array(sl).T, srt, 'rect', perseg, overlap)
     _, rsr = istft(np.array(sr).T, srt, 'rect', perseg, overlap)
@@ -235,7 +235,7 @@ def embeed(mess: EMess, infile: str, outfile: str, ths=2048, perseg=441, overlap
     wavfile.write(outfile, srt, fsg)
 
 
-def _hb_by_amp(nn: complex, b: str, delt=256):
+def _hb_by_amp(nn: complex, b: str, delt=16):
     i = nn.real
     j = nn.imag
     mm = np.abs(nn)
@@ -245,7 +245,7 @@ def _hb_by_amp(nn: complex, b: str, delt=256):
     return np.complex(i, j)
 
 
-def _gp_by_amp(tt: complex, delt=256):
+def _gp_by_amp(tt: complex, delt=16):
     bb = '1' if int(np.abs(tt) // delt) % 2 else '0'
     return bb
 
@@ -294,7 +294,7 @@ def estimate(audiofile: str, ths=2048, perseg=441, overlap=0):
         cr = zxxr[:, i]
         u += sum(np.abs(cl) > ths) + sum(np.abs(cr) > ths)
         i += 1
-    return u // 8
+    return u // 8, srt, sig.shape[0]
 
 
 def convert():
@@ -321,18 +321,18 @@ if __name__ == '__main__':
     pubk = 'test/test.pub.key'
     # print(estimate(infile), 'bytes available.')
 
-    c = Cryptor()
-    d = Cryptor(debug=True)
+    # c = Cryp()
+    # d = Cryp(debug=True)
 
-    # c = Cryptor(MODE_AES, password=b'123456')
-    # d = Cryptor(MODE_AES, password=b'123456')
+    c = Cryp(MODE_AES, password=b'123456')
+    d = Cryp(MODE_AES, password=b'123456')
 
-    # c = Cryptor(MODE_AES, password=b'123456',
-    #             verify=True, key=privk)
-    # d = Cryptor(MODE_AES, password=b'123456',
-    #             verify=True, key=pubk)
+    # c = Cryp(MODE_AES, password=b'123456',
+    #            verify=True, key=privk)
+    # d = Cryp(MODE_AES, password=b'123456',
+    #            verify=True, key=pubk)
 
-    # mm = random.randbytes(1024)
+    # mm = random.randbytes(2048)
     mm = b'hello' * 200
     ee = c.encrypt(mm)
     # print(ee, len(ee))
@@ -343,5 +343,5 @@ if __name__ == '__main__':
     # print(dd[:len(ee)], len(dd))
     dd, fg = d.decrypt(dd)
     los, ber = mis(dd, mm)
-    print(dd)
+    # print(dd)
     print(dd == mm, 'lost={},ber={}'.format(los, ber))
