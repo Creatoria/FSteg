@@ -4,6 +4,9 @@
 
 ## Usage
 
+> 用gooey糊了一个gui，勉强一用罢
+> 用vue的前端终究还是因为屑webpack删了
+
 ```
 > py .\app.py -h         
 usage: app.py [-h] {estimate,embeed,extract} ...       
@@ -67,6 +70,7 @@ optional arguments:
 
 受载体音频以及参数(每帧点数、阈值、校验位等)的不同，实际可以隐藏的容量也有很大差异
 
+由于gui打包后文件太大，还是从源文件运行吧
 
 ## 已知问题
 

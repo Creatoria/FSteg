@@ -8,3 +8,7 @@ test
 *.wav
 *.mp3
 *.log
+
+Doc
+build
+dist
